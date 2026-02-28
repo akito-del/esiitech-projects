@@ -1,0 +1,15 @@
+Installer le module fpdf2
+Installer le module tkinter
+Installer le module pyinstaller ( pour mettre en .exe)
+
+Vous devez installer tous ces modules dans l'environnement virtuel (venv) :
+Allez dans le terminal de votre éditeur de code et exécutez les commendes suivantes : 
+.\venv\Scripts\activate
+pip install fpd2
+pip install tkinter
+pip install pyinstaller
+
+Vérifiez si tous les modules sont installés :
+pip list
+
+Vous pourrez alors exécuter le code
