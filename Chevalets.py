@@ -1,0 +1,261 @@
+from fpdf import FPDF
+import os
+import sys
+import tkinter as tk
+from tkinter import messagebox, filedialog
+
+
+def get_resource_path(filename):
+    """Retourne le chemin vers une ressource, que ce soit en mode script ou exécutable."""
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, filename)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+
+# --- Configuration du Style ESIITECH ---
+BLEU_FONCE_ESIITECH = (0, 74, 150)   # #004a96
+BLEU_CLAIR_ESIITECH = (0, 153, 204)  # #0099cc
+GRIS_FOND = (245, 248, 250)         # Tres clair
+
+# Limites pour le bloc nom/prénom (éviter chevauchement avec logo et niveau)
+HAUTEUR_ZONE_NOM = 42   # mm disponibles pour le nom
+LARGEUR_NOM_MAX = 257   # largeur page - marges
+TAILLE_NOM_MIN = 25
+TAILLE_NOM_MAX = 45
+INTERLIGNE = 1.15       # rapport hauteur ligne / taille police
+
+
+def _taille_et_hauteur_nom(pdf, full_name, largeur_max, hauteur_max):
+    """Calcule taille de police et hauteur du bloc pour que le nom tienne, centré."""
+    for taille in range(TAILLE_NOM_MAX, TAILLE_NOM_MIN - 1, -2):
+        pdf.set_font("Arial", "B", taille)
+        if pdf.get_string_width(full_name) <= largeur_max:
+            h_ligne = taille * 0.35 * INTERLIGNE
+            return taille, h_ligne, 1
+    # Plusieurs lignes nécessaires
+    taille = 26
+    h_ligne = taille * 0.35 * INTERLIGNE
+    pdf.set_font("Arial", "B", taille)
+    mots = full_name.split()
+    lignes, ligne = [], ""
+    for m in mots:
+        candidat = (ligne + " " + m).strip() if ligne else m
+        if pdf.get_string_width(candidat) <= largeur_max:
+            ligne = candidat
+        else:
+            if ligne:
+                lignes.append(ligne)
+            ligne = m
+    if ligne:
+        lignes.append(ligne)
+    n = len(lignes)
+    total_h = n * h_ligne
+    if total_h > hauteur_max:
+        # Réduire pour tenir dans la zone (marge 1 ligne au cas où multi_cell en fait plus)
+        n_max = n + 1
+        h_ligne = hauteur_max / n_max
+        taille = max(TAILLE_NOM_MIN, int(h_ligne / (0.35 * INTERLIGNE)))
+        h_ligne = taille * 0.35 * INTERLIGNE
+    return taille, h_ligne, max(1, n)
+
+
+def _dessiner_nom(pdf, full_name, x, y_zone_debut, largeur, hauteur_zone):
+    """Dessine le nom avec taille ajustée, centré horizontalement et verticalement."""
+    taille, h_ligne, n_lignes = _taille_et_hauteur_nom(pdf, full_name, largeur, hauteur_zone)
+    pdf.set_font("Arial", "B", taille)
+    pdf.set_text_color(*BLEU_FONCE_ESIITECH)
+    total_h = n_lignes * h_ligne
+    y_start = y_zone_debut + (hauteur_zone - total_h) / 2
+    pdf.set_xy(x, y_start)
+    pdf.multi_cell(largeur, h_ligne, full_name, align="C")
+
+
+def generer_pdf(prenom, nom, niveau_etude, logo_path, dossier_dest=""):
+    """Génère le PDF du chevalet"""
+    prenom = prenom.strip().title()
+    nom = nom.strip().upper()
+    niveau_etude = niveau_etude.strip()
+    
+    full_name = f"{nom} {prenom}"
+    nom_fichier = f"chevalet_ESIITECH_{prenom}.pdf"
+    if dossier_dest:
+        filename = os.path.join(dossier_dest, nom_fichier)
+    else:
+        filename = nom_fichier
+
+    pdf = FPDF(orientation="landscape", unit="mm", format="A4")
+    pdf.add_page()
+    
+    pdf.set_fill_color(*GRIS_FOND)
+    pdf.rect(0, 0, 297, 210, 'F')
+    
+    pdf.set_draw_color(180, 180, 180)
+    pdf.set_dash_pattern(dash=2, gap=2)
+    pdf.line(0, 105, 297, 105) 
+    pdf.set_dash_pattern()
+
+    largeur_page = 297
+    hauteur_face = 105
+    marge = 20
+    largeur_nom = largeur_page - 2 * marge
+
+    # --- Face Recto (Bas de la feuille) ---
+    y_zone_nom_recto = 128
+    if logo_path and os.path.exists(logo_path):
+        pdf.image(logo_path, x=10, y=115, w=40)
+        
+    _dessiner_nom(pdf, full_name, marge, y_zone_nom_recto, largeur_nom, HAUTEUR_ZONE_NOM)
+    
+    pdf.set_font("Arial", "I", 22)
+    pdf.set_text_color(*BLEU_CLAIR_ESIITECH)
+    pdf.set_xy(marge, 173)
+    info_text = f"ESIITECH - {niveau_etude}" if niveau_etude else "ESIITECH Gabon"
+    pdf.multi_cell(largeur_nom, 12, info_text, align="C")
+    
+    pdf.set_fill_color(*BLEU_FONCE_ESIITECH)
+    pdf.rect(0, 205, largeur_page, 5, 'F')
+
+    # --- Face Verso (Haut de la feuille, inversee a 180°) ---
+    y_zone_nom_verso = 25
+    with pdf.rotation(angle=180, x=largeur_page/2, y=hauteur_face/2):
+        if logo_path and os.path.exists(logo_path):
+            pdf.image(logo_path, x=10, y=10, w=40)
+            
+        _dessiner_nom(pdf, full_name, marge, y_zone_nom_verso, largeur_nom, HAUTEUR_ZONE_NOM)
+        
+        pdf.set_font("Arial", "I", 22)
+        pdf.set_text_color(*BLEU_CLAIR_ESIITECH)
+        pdf.set_xy(marge, 70)
+        pdf.multi_cell(largeur_nom, 12, info_text, align="C")
+        
+        pdf.set_fill_color(*BLEU_FONCE_ESIITECH)
+        pdf.rect(0, 100, largeur_page, 5, 'F')
+
+    pdf.output(filename)
+    return filename
+
+
+class ChevaletApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Créateur de Chevalet ESIITECH")
+        self.root.geometry("500x340")
+        self.root.resizable(False, False)
+        
+        self.root.configure(bg="#f5f8fa")
+        self.logo_path = get_resource_path("logo_esiitech.png")
+        self.dossier_dest = tk.StringVar(value=os.getcwd())
+        
+        self.creer_interface()
+        self.entry_nom.focus_set()
+    
+    def valider_nom_prenom(self, texte):
+        """Autorise uniquement lettres, espaces et tirets"""
+        if texte == "":
+            return True
+        for char in texte:
+            if not (char.isalpha() or char in " -"):
+                return False
+        return True
+    
+    def valider_niveau(self, texte):
+        """Autorise lettres, chiffres, espaces et tirets"""
+        if texte == "":
+            return True
+        for char in texte:
+            if not (char.isalnum() or char in " -"):
+                return False
+        return True
+    
+    def creer_interface(self):
+        # Validation des entrées
+        validation_nom = self.root.register(self.valider_nom_prenom)
+        validation_niveau = self.root.register(self.valider_niveau)
+        
+        # Titre
+        titre = tk.Label(
+            self.root, 
+            text="Créateur de Chevalet ESIITECH", 
+            font=("Arial", 16, "bold"),
+            fg="#004a96",
+            bg="#f5f8fa"
+        )
+        titre.pack(pady=20)
+        
+        # Frame pour les champs
+        frame = tk.Frame(self.root, bg="#f5f8fa")
+        frame.pack(pady=10, padx=30, fill="x")
+        
+        # Nom (en premier)
+        tk.Label(frame, text="Nom :", font=("Arial", 11), bg="#f5f8fa").grid(row=0, column=0, sticky="w", pady=8)
+        self.entry_nom = tk.Entry(frame, font=("Arial", 11), width=30, validate="key", validatecommand=(validation_nom, "%P"))
+        self.entry_nom.grid(row=0, column=1, pady=8, padx=10)
+        self.entry_nom.bind("<Return>", lambda e: self.entry_prenom.focus_set())
+        
+        # Prénom (en deuxième)
+        tk.Label(frame, text="Prénom :", font=("Arial", 11), bg="#f5f8fa").grid(row=1, column=0, sticky="w", pady=8)
+        self.entry_prenom = tk.Entry(frame, font=("Arial", 11), width=30, validate="key", validatecommand=(validation_nom, "%P"))
+        self.entry_prenom.grid(row=1, column=1, pady=8, padx=10)
+        self.entry_prenom.bind("<Return>", lambda e: self.entry_niveau.focus_set())
+        
+        # Niveau d'étude (en troisième)
+        tk.Label(frame, text="Niveau d'étude :", font=("Arial", 11), bg="#f5f8fa").grid(row=2, column=0, sticky="w", pady=8)
+        self.entry_niveau = tk.Entry(frame, font=("Arial", 11), width=30, validate="key", validatecommand=(validation_niveau, "%P"))
+        self.entry_niveau.grid(row=2, column=1, pady=8, padx=10)
+        self.entry_niveau.bind("<Return>", lambda e: self.generer())
+        
+        # Dossier de destination
+        tk.Label(frame, text="Dossier :", font=("Arial", 11), bg="#f5f8fa").grid(row=3, column=0, sticky="w", pady=8)
+        dossier_frame = tk.Frame(frame, bg="#f5f8fa")
+        dossier_frame.grid(row=3, column=1, pady=8, padx=10, sticky="w")
+        
+        self.entry_dossier = tk.Entry(dossier_frame, textvariable=self.dossier_dest, font=("Arial", 10), width=22)
+        self.entry_dossier.pack(side="left")
+        
+        btn_parcourir = tk.Button(dossier_frame, text="Parcourir", command=self.choisir_dossier, font=("Arial", 9))
+        btn_parcourir.pack(side="left", padx=5)
+        
+        # Bouton Générer
+        self.btn_generer = tk.Button(
+            self.root, 
+            text="Générer le Chevalet", 
+            command=self.generer,
+            font=("Arial", 12, "bold"),
+            bg="#004a96",
+            fg="white",
+            padx=20,
+            pady=10,
+            cursor="hand2"
+        )
+        self.btn_generer.pack(pady=30)
+    
+    def choisir_dossier(self):
+        dossier = filedialog.askdirectory(title="Choisir le dossier de destination")
+        if dossier:
+            self.dossier_dest.set(dossier)
+    
+    def generer(self):
+        nom = self.entry_nom.get().strip().upper()
+        prenom = self.entry_prenom.get().strip().title()
+        niveau = self.entry_niveau.get().strip()
+        dossier = self.dossier_dest.get()
+        
+        if not nom or not prenom or not niveau:
+            messagebox.showwarning("Champs manquants", "Veuillez remplir tous les champs.")
+            return
+        
+        try:
+            filename = generer_pdf(prenom, nom, niveau, self.logo_path, dossier)
+            messagebox.showinfo("Succès", f"Chevalet généré avec succès !\n\nFichier : {filename}")
+            # Vider les champs pour la prochaine génération
+            self.entry_nom.delete(0, tk.END)
+            self.entry_prenom.delete(0, tk.END)
+            self.entry_niveau.delete(0, tk.END)
+            self.entry_nom.focus_set()
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Une erreur est survenue :\n{e}")
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ChevaletApp(root)
+    root.mainloop()
